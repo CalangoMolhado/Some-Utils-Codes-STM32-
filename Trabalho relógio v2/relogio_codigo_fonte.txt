@@ -1,0 +1,254 @@
+#include "main.h"
+#include "stm32f4xx.h"
+
+typedef struct {
+
+	int pinos;
+	int estado_anterior;
+	int estado_atual;
+
+}infopinos;
+infopinos infobot[4];
+
+void salva_estado_atual(infopinos *infpinos){
+	infpinos->estado_atual = (GPIOB->IDR & infpinos->pinos);
+}
+
+int verifica_estado(infopinos *infpinos){
+	if(infpinos->estado_atual != infpinos->estado_anterior){
+		return 1;
+	}
+	return 0;
+}
+
+void salva_estado_anterior(infopinos *infpinos){
+	infpinos->estado_anterior = infpinos->estado_atual;
+}
+
+int main(void)
+{
+	int j;
+	for(j=0; j<4; j++){
+		infobot[j].pinos= 1 << j;
+	}
+	for(j=0; j<4; j++){
+		infobot[j].estado_anterior=0;
+	}
+
+	uint16_t display[]={
+		//gfedcba
+		0b0111111, //número 0
+		0b0000110, //número 1
+		0b1011011, //número 2
+		0b1001111, //número 3
+		0b1100110, //número 4
+		0b1101101, //número 5
+		0b1111101, //número 6
+		0b0000111, //número 7
+		0b1111111, //número 8
+		0b1101111, //número 9
+	};
+
+	int pos_display[]={ // seleciona os display ativos através do GND de cada arquivo
+		0b0000011111111, //display 0
+		0b0000101111111, //display 1
+		0b0001001111111, //display 2
+		0b0010001111111, //display 3
+		0b0100001111111, //display 4
+		0b1000001111111, //display 5
+	};
+
+	// MAQUINA DE ESTADOS
+	enum {
+		Contando,
+		Alterando,
+		Reset,
+	}estado_relogio;
+
+
+	int n_display[6]={0};
+	int conta_pos=-1;
+	int alterar=-1, pausar=-1, reset=-1;
+	int alt_display[6]={1};
+	int conta_pos_alt=0;
+	int incrementa_digito=0;
+	int ajuste_display=0;
+
+	RCC->AHB1ENR = 0x87;
+	RCC->APB2ENR |= 0X70000; // Habilitar TIM9, TIM10 E TIM11
+	GPIOC->MODER = 0x1555555; // PC0 até PC12 como saída
+
+	GPIOB->MODER &= ~0xff; // definindo PB0 até PB3 como entradas
+	GPIOB->PUPDR = 0xAA; // definindo pull down PB0 até PB3
+
+	TIM9->CR1=0x1;
+	TIM9->PSC=15999;// 1khz = 1ms
+	TIM9->ARR=999;// 1s
+
+	TIM10->CR1=0x1;
+	TIM10->PSC=1599;// 10khz = 0,1ms
+	TIM10->ARR=10;// 1ms
+
+	TIM11->CR1=0x1;
+	TIM11->PSC=15999;// 1khz = 1ms
+	TIM11->ARR=200;// 200ms
+
+	GPIOC->ODR = 0b1111110000000;
+	estado_relogio=Contando;
+
+	while (1)
+	{
+
+
+		for(j=0; j<4; j++){
+			salva_estado_atual(&infobot[j]);
+		}
+		if(alterar==-1){
+			for(int j=0; j<6; j++){
+				alt_display[j]=1;
+			}
+			conta_pos_alt=0;
+		}
+
+	 if(TIM10->SR & 0x1){ // parte do código destinada a multiplexar os displays
+		TIM10->SR&=~ 0x1;
+		conta_pos++;
+		if(conta_pos==6)conta_pos=0;
+
+		GPIOC->ODR &= 0b0000001111111; // desativa todos displays
+		GPIOC->ODR |= pos_display[conta_pos]; // seleciona o display0
+		GPIOC->ODR &= 0b1111110000000; // limpa os segmentos do display
+		if(alt_display[conta_pos]==1){ // utilizado no modo alterar para efeito de piscar o display
+			GPIOC->ODR |= display[n_display[conta_pos]]; // acende os LEDS determinados para formar o número atual do display0
+		}
+
+
+		// botão 0 ou botão 1 pausam a contagem
+			if (infobot[0].estado_atual && alterar !=1 && verifica_estado(&infobot[0])){ // botão de pause
+				reset=reset*-1;
+			}
+
+			if (infobot[1].estado_atual && pausar !=1 && verifica_estado(&infobot[1])) { // botão de alteração de valores
+				alterar=alterar*-1;
+			}
+
+			if (infobot[2].estado_atual && verifica_estado(&infobot[2])) {
+				conta_pos_alt++; // seleciona o display à esquerda toda vez que o botão 2 for apertado
+			if(conta_pos_alt>=6)conta_pos_alt=0;
+			}
+
+			if (infobot[3].estado_atual && verifica_estado(&infobot[3])) {
+				n_display[conta_pos_alt]++;
+			}
+
+			for(j=0; j<4; j++){
+				salva_estado_anterior(&infobot[j]);
+			}
+	 }
+
+		if(n_display[0]>=10){
+			n_display[0]=0;
+		if(alterar!=1)
+			n_display[1]++;
+		}
+		if(n_display[1]>=6){
+			n_display[1]=0;
+		if(alterar!=1)
+			n_display[2]++;
+		}
+		if(n_display[2]>=10){
+			n_display[2]=0;
+		if(alterar!=1)
+			n_display[3]++;
+		}
+		if(n_display[3]>=6){
+			n_display[3]=0;
+		if(alterar!=1)
+			n_display[4]++;
+		}
+		if(n_display[4]>=10){
+			n_display[4]=0;
+		if(alterar!=1)
+			n_display[5]++;
+		}
+		if(n_display[5]>=3){
+			n_display[5]=0;
+		}
+		if(n_display[4]>=4 && n_display[5]==2){
+			n_display[4]=0;
+		if(alterar!=1)
+			n_display[5]=0;
+		}
+
+
+
+		if (alterar==-1){
+			estado_relogio=Contando;
+		}
+		if (alterar==1){
+			estado_relogio=Alterando;
+		}
+		if(reset==1){
+			estado_relogio=Reset;
+		}
+
+		switch(estado_relogio)
+		{
+		case Contando:
+		{
+			if(TIM9->SR & 0x1){
+				TIM9->SR&=~ 0x1;
+
+				if(alterar==-1){//Se alterar não estiver habilitado o relógio conta normalmente.
+					n_display[0]++;
+				}
+			 }
+			break;
+		}
+		case Alterando:
+		{
+			if(TIM11->SR & 0x1){
+					// parte do código destinada ao efeito de piscar
+					// determinado display quando habilitado o modo alterar
+					TIM11->SR&=~ 0x1;
+					if(alterar==1){
+						alt_display[conta_pos_alt]*=-1; // se posição==0 o display0 irá piscar
+						for(int j=0; j<6; j++){
+							if(conta_pos_alt!=j){
+							alt_display[j]=1;
+							}
+						}
+					}
+
+					if(infobot[3].estado_atual && incrementa_digito<2)incrementa_digito++;
+					else incrementa_digito=0;
+					if(incrementa_digito>=2 && infobot[3].estado_atual){
+						incrementa_digito=0;
+						n_display[conta_pos_alt]++;
+					}
+
+					if(infobot[2].estado_atual && ajuste_display<2)ajuste_display++;
+					else ajuste_display=0;
+					if(ajuste_display>=2 && infobot[2].estado_atual){
+						ajuste_display=0;
+						conta_pos_alt++;
+						if(conta_pos_alt>5)conta_pos_alt=0;
+					}
+				}
+			break;
+		}
+		case Reset:
+		{
+			n_display[0]=0;
+			n_display[1]=0;
+			n_display[2]=0;
+			n_display[3]=0;
+			n_display[4]=0;
+			n_display[5]=0;
+			reset=reset*-1;
+			break;
+		}
+
+		}
+	 }
+ }
