@@ -1,0 +1,5 @@
+Abrir o arquivo "sch" pelo falstad.
+
+link: https://www.falstad.com/circuit/
+
+Arquivo->Abrir Arquivo->Selecionar o arquivo "sch"
