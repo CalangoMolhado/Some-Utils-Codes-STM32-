@@ -1,1 +1,2 @@
-Trabalho da discipina de Micros II
+Trabalho para a disciplina de MICROS II, realizado em conjunto com [@TheKarthur] (Arthur Rodrigues Padilha)
+O objetivo do trabalho era implementar a leitura de uma dispositivo através do protocolo I2C, utilizando o periférico próprio do STM32-F411RE para isso. Fizemos a leitura com o periférico e para complementar fizemos um script em python que respondia de acordo com as variações de leitura do nosso sensor, podendo controlar um objeto dentro da tela do "jogo" em python. O sensor utilizado foi um módulo GY-521 (MPU-6050)
